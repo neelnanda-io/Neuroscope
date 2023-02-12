@@ -15,6 +15,8 @@ import datasets
 from typing import Tuple, Union
 from IPython import get_ipython
 from transformer_lens.utils import get_corner
+from functools import lru_cache
+import transformer_lens
 
 CACHE_DIR = Path.home() / ("cache")
 REPO_ROOT = Path.home() / ("hf_repos/")
@@ -140,6 +142,7 @@ class TokenDatasetWrapper:
     def __len__(self):
         return len(self.dataset)
 
+@lru_cache(maxsize=None)
 def get_dataset(dataset_name: str, local=False) -> TokenDatasetWrapper:
     """Loads in one of the model datasets over which we take the max act examples. If local, loads from local folder, otherwise loads from HuggingFace Hub
 
@@ -181,7 +184,8 @@ def get_dataset(dataset_name: str, local=False) -> TokenDatasetWrapper:
         remote_dataset_names = {
             "c4": "NeelNanda/c4-tokenized-2b",
             "code": "NeelNanda/code-tokenized",
-            "pile": "NeelNanda/pile-tokenized-2b",
+            "pile": "NeelNanda/pile-small-tokenized-2b",
+            "pile-small": "NeelNanda/pile-small-tokenized-2b",
             "pile-big": "NeelNanda/pile-tokenized-10b",
             "pile-big-uint16": "NeelNanda/pile-tokenized-10b",
             "openwebtext": "NeelNanda/openwebtext-tokenized-9b",
@@ -297,3 +301,45 @@ class MaxStore:
 
     def __repr__(self):
         return f"MaxStore(top_k={self.top_k}, length={self.length}, counter={self.counter}, total_updates={self.total_updates}, device={self.device})\n Max Values: {get_corner(self.max)}\n Indices: {get_corner(self.index)}"
+
+# %%
+
+def model_name_to_data_name(model_name):
+    if "old" in model_name or "pile" in model_name:
+        data_name = "pile"
+    elif "pythia" in model_name:
+        data_name = "pile-big"
+    elif "gpt2" in model_name:
+        data_name = "openwebtext"
+    elif model_name.startswith("solu") or model_name.startswith("gelu") or model_name.startswith("attn-only"):
+        # Note that solu-{}l-pile will go into the first set!
+        data_name = "c4-code"
+    else:
+        raise ValueError(f"Unknown model name: {model_name}")
+    return data_name
+
+def model_name_to_fancy_data_name(model_name):
+    fancy_data_names = {
+        "c4-code": "80% C4 (Web Text) and 20% Python Code",
+        "c4": "C4 (Web Text)",
+        "code": "Python Code",
+        "pile": "The Pile",
+        "pile-big": "The Pile",
+        "pile-small": "The Pile",
+        "openwebtext": "Open Web Text",
+    }
+    data_name = model_name_to_data_name(model_name)
+    return fancy_data_names[data_name]
+
+def get_fancy_model_name(model_name):
+    cfg = transformer_lens.loading.get_pretrained_model_config(model_name)
+    if cfg.act_fn in ["solu", "solu_ln"]:
+        return f"SoLU Model: {cfg.n_layers} Layers, {cfg.d_mlp} Neurons per Layer"
+    elif "gelu" in cfg.act_fn:
+        if cfg.original_architecture == "neel":
+            return f"GELU Model: {cfg.n_layers} Layers, {cfg.d_mlp} Neurons per Layer"
+        elif cfg.original_architecture == "GPT2LMHeadModel":
+            return f"GPT-2 {model_name.split('-')[-1].capitalize()}: {cfg.n_layers} Layers, {cfg.d_mlp} Neurons per Layer"
+    else:
+        raise ValueError(f"{model_name} Invalid Model Name for fancy model name")
+    

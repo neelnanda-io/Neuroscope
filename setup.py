@@ -16,6 +16,7 @@ setup(
         "datasets",
         "wandb",
         "fancy_einsum",
+        "transformer_lens"
     ],
     packages=["neuroscope"],
 )
